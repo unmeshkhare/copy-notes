@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Copy Notes</title>
+<meta name="description" content="A simple place to write notes and short stories on any phone, and copy them anywhere.">
+<meta name="theme-color" content="#fbfaf7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Copy Notes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+<script>
+  // Pick the theme before anything is drawn, so there is no flash.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('theme'); } catch (e) {}
+    if (t !== 'dark' && t !== 'light') {
+      t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+    var fs = null;
+    try { fs = parseInt(localStorage.getItem('fs'), 10); } catch (e) {}
+    if (fs >= 16 && fs <= 36) document.documentElement.style.setProperty('--fs', fs + 'px');
+  })();
+</script>
+<script src="firebase-config.js"></script>
+
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --surface: #ffffff;
+    --text: #1b1b1b;
+    --muted: #6b6b66;
+    --line: #e2e0da;
+    --btn: #1b1b1b;
+    --btn-text: #fbfaf7;
+    --danger: #b3261e;
+    --fs: 20px;
+  }
+  :root[data-theme="dark"] {
+    --bg: #121212;
+    --surface: #1c1c1c;
+    --text: #ecebe7;
+    --muted: #a09f99;
+    --line: #2f2f2d;
+    --btn: #ecebe7;
+    --btn-text: #121212;
+    --danger: #f2b8b5;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", sans-serif;
+    font-size: 18px;
+    line-height: 1.6;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [hidden] { display: none !important; }
+
+  .screen {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 16px calc(110px + env(safe-area-inset-bottom));
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  #editor.screen { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+
+  h1 { font-size: 26px; line-height: 1.25; margin: 0; font-weight: 700; }
+  .muted { color: var(--muted); }
+  .small { font-size: 15px; }
+
+  .bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: calc(12px + env(safe-area-inset-top)) 0 12px;
+    background: var(--bg);
+  }
+  .bar h1 { font-size: 24px; white-space: nowrap; }
+  .barbtns { display: flex; gap: 8px; }
+  .barbtns .btn { white-space: nowrap; padding: 0 12px; }
+
+  .btn {
+    font: inherit; font-size: 17px;
+    min-height: 48px; padding: 0 18px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .btn:active { opacity: .65; }
+  .btn.ghost { background: transparent; }
+  .btn.primary { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+  .btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .btn.dangerfill { background: var(--danger); color: var(--bg); border-color: var(--danger); }
+  .btn.big { min-height: 56px; font-size: 19px; font-weight: 600; width: 100%; }
+
+  input, textarea {
+    font: inherit; color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    width: 100%;
+  }
+  input::placeholder, textarea::placeholder { color: var(--muted); opacity: .8; }
+  input:focus, textarea:focus, .btn:focus-visible, .card:focus-visible {
+    outline: 2px solid var(--text); outline-offset: 2px;
+  }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  /* ---------- lock ---------- */
+  #lock { display: flex; align-items: center; justify-content: center; padding-bottom: 40px; }
+  .lockbox { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+  .pwrow { display: flex; gap: 8px; }
+  .pwrow input { flex: 1; min-width: 0; font-size: 20px; }
+  .err { color: var(--danger); min-height: 1.6em; margin: 0; font-size: 16px; }
+
+  #splash { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); background: var(--bg); z-index: 50; }
+
+  /* ---------- list ---------- */
+  #list { display: flex; flex-direction: column; }
+  .credit { margin: auto 0 0; padding-top: 28px; text-align: center; font-size: 12px; color: var(--muted); opacity: .85; }
+  #lock .credit { margin-top: 18px; padding-top: 0; }
+  .searchwrap { margin: 4px 0 8px; }
+  #search { font-size: 18px; min-height: 52px; }
+  .note { font-size: 15px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
+  .note.err { color: var(--danger); border-color: var(--danger); }
+  #count { margin: 6px 2px 10px; }
+
+  .card {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin: 0 0 12px;
+    overflow: hidden;
+  }
+  .open {
+    flex: 1; min-width: 0; text-align: left;
+    font: inherit; color: inherit;
+    background: none; border: 0;
+    padding: 14px 4px 14px 16px;
+    cursor: pointer;
+  }
+  .open:active { opacity: .7; }
+  .open:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; border-radius: 12px; }
+  .cardcopy { min-height: 44px; padding: 0 14px; margin-right: 12px; flex: none; font-size: 16px; }
+  .ct { font-size: calc(var(--fs) * .95); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+  .cs {
+    font-size: calc(var(--fs) * .78); color: var(--muted); margin-top: 4px; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .cd { font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .empty { text-align: center; color: var(--muted); padding: 48px 8px; font-size: 18px; }
+
+  .btn.fab {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: calc(100% - 32px); max-width: 688px;
+    z-index: 6;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  }
+
+  /* ---------- editor ---------- */
+  .status { font-size: 15px; color: var(--muted); text-align: right; }
+  .tools { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tools .btn { flex: 1; padding: 0 6px; }
+  #title { font-size: calc(var(--fs) * 1.2); font-weight: 700; line-height: 1.4; margin-bottom: 12px; }
+  #body {
+    display: block; resize: none; overflow: hidden;
+    font-size: var(--fs); line-height: 1.7;
+    min-height: 55vh; min-height: 55dvh;
+  }
+
+  /* ---------- sheets ---------- */
+  .backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.45); z-index: 20; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+    max-width: 720px; margin: 0 auto;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 20px 20px 0 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .sheet .btn { width: 100%; text-align: left; min-height: 54px; }
+  .sheet .btn.big { text-align: center; }
+  .sheet p { margin: 4px 2px 6px; font-size: 19px; }
+  .sizes { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; min-height: 54px; }
+  .sizes .btn { width: auto; min-width: 64px; text-align: center; }
+  .sizes div { display: flex; gap: 8px; }
+
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 32px);
+    background: var(--btn); color: var(--btn-text);
+    padding: 12px 18px; border-radius: 12px; font-size: 16px; z-index: 40;
+    text-align: center;
+  }
+
+  /* ---------- printing (Save as PDF) ---------- */
+  #printArea { display: none; }
+  @media print {
+    @page { margin: 18mm; }
+    html, body { background: #fff !important; color: #000 !important; }
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block; font-family: "Noto Sans", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", system-ui, sans-serif; }
+    .ps { break-before: page; page-break-before: always; }
+    .ps:first-child { break-before: auto; page-break-before: auto; }
+    .ps h1 { font-size: 20pt; margin: 0 0 4pt; color: #000; }
+    .pd { color: #555; font-size: 10pt; margin-bottom: 14pt; }
+    .pb { white-space: pre-wrap; font-size: 13pt; line-height: 1.6; overflow-wrap: anywhere; }
+  }
+</style>
+</head>
+
+<body>
+<div id="splash">Loading…</div>
+
+<!-- ============ LOCK ============ -->
+<main id="lock" class="screen" hidden>
+  <form id="lockForm" class="lockbox">
+    <h1>Copy Notes</h1>
+    <p class="muted" style="margin:0">Enter your passcode</p>
+    <input type="email" id="lockUser" class="visually-hidden" autocomplete="username" tabindex="-1" aria-hidden="true">
+    <div class="pwrow">
+      <input id="pass" type="password" autocomplete="current-password" placeholder="Passcode" aria-label="Passcode" required>
+      <button type="button" id="showPass" class="btn ghost">Show</button>
+    </div>
+    <button class="btn primary big" type="submit" id="unlockBtn">Unlock</button>
+    <p id="lockErr" class="err" role="alert"></p>
+    <p class="credit">made by Unmesh Khare</p>
+  </form>
+</main>
+
+<!-- ============ LIST ============ -->
+<main id="list" class="screen" hidden>
+  <header class="bar">
+    <h1>Copy Notes</h1>
+    <div class="barbtns">
+      <button id="themeBtn" class="btn ghost" type="button" aria-label="Switch between light and dark"></button>
+      <button id="menuBtn" class="btn ghost" type="button">☰ Menu</button>
+    </div>
+  </header>
+  <div class="searchwrap">
+    <input id="search" type="search" placeholder="Search stories…" aria-label="Search stories" enterkeyhint="search" autocomplete="off">
+  </div>
+  <p id="demoNote" class="note" hidden>Preview mode: not connected to the cloud yet. Stories stay on this device only.</p>
+  <p id="listErr" class="note err" hidden></p>
+  <p id="count" class="muted small"></p>
+  <div id="cards"></div>
+  <p class="credit">made by Unmesh Khare</p>
+  <button id="newBtn" class="btn primary big fab" type="button">+ New story</button>
+</main>
+
+<!-- ============ EDITOR ============ -->
+<main id="editor" class="screen" hidden>
+  <header class="bar">
+    <button id="backBtn" class="btn" type="button">← Stories</button>
+    <span id="status" class="status" aria-live="polite"></span>
+  </header>
+  <div class="tools">
+    <button id="fsMinus" class="btn" type="button" aria-label="Smaller text">A−</button>
+    <button id="fsPlus" class="btn" type="button" aria-label="Bigger text">A+</button>
+    <button id="copyOne" class="btn" type="button">Copy</button>
+    <button id="delOne" class="btn danger" type="button">Delete</button>
+  </div>
+  <input id="title" type="text" placeholder="Title" maxlength="200" autocomplete="off" enterkeyhint="next" aria-label="Title">
+  <textarea id="body" placeholder="Start writing…" aria-label="Story text"></textarea>
+</main>
+
+<!-- ============ SHEETS ============ -->
+<div id="sheetWrap" hidden>
+  <div class="backdrop" id="backdrop"></div>
+
+  <div class="sheet" id="menuSheet" role="dialog" aria-label="Menu" hidden>
+    <button class="btn" id="mCopyAll" type="button">Copy all stories</button>
+    <button class="btn" id="mWord" type="button">Download as Word (.docx)</button>
+    <button class="btn" id="mPdf" type="button">Save as PDF</button>
+    <div class="sizes"><span>Text size</span>
+      <div><button class="btn" id="mSmaller" type="button" aria-label="Smaller text">A−</button><button class="btn" id="mBigger" type="button" aria-label="Bigger text">A+</button></div>
+    </div>
+    <button class="btn" id="mLock" type="button">Lock the app</button>
+    <button class="btn ghost big" id="mClose" type="button">Close</button>
+  </div>
+
+  <div class="sheet" id="confirmSheet" role="dialog" aria-label="Confirm" hidden>
+    <p id="confirmText"></p>
+    <button class="btn dangerfill big" id="confirmYes" type="button">Delete</button>
+    <button class="btn big" id="confirmNo" type="button">Keep it</button>
+  </div>
+</div>
+
+<div id="toast" role="status" hidden></div>
+<div id="printArea" aria-hidden="true"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (s) { return document.querySelector(s); };
+  var CFG = window.FIREBASE_CONFIG || {};
+  var LOGIN_EMAIL = window.LOGIN_EMAIL || 'stories@example.com';
+  var FIREBASE_VERSION = '10.14.1';
+  var CONFIGURED = !!(CFG.apiKey && CFG.projectId && !/PASTE|YOUR_/i.test(CFG.apiKey + CFG.projectId));
+
+  var state = {
+    stories: [],
+    view: 'splash',
+    current: null,
+    query: '',
+    listScroll: 0,
+    gotFirstSnapshot: false
+  };
+  var store = null;
+
+  /* ------------------------------------------------------------ helpers */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function norm(s) { return String(s || '').normalize('NFC').toLowerCase(); }
+  // A story with no title borrows its first line (if short) as the title,
+  // and that line is then left out of the text shown under it.
+  function splitStory(s) {
+    var title = (s.title || '').trim();
+    var body = s.body || '';
+    if (title) return { title: title, body: body };
+    var m = body.match(/^\s*([^\n]+)\n?/);
+    if (m && m[1].trim().length <= 60) {
+      return { title: m[1].trim(), body: body.slice(m[0].length).replace(/^\s*\n/, '') };
+    }
+    return { title: 'Untitled', body: body };
+  }
+  function displayTitle(s) { return splitStory(s).title; }
+  function displayBody(s) { return splitStory(s).body; }
+  function fmtDate(ms) {
+    try { return new Date(ms || Date.now()).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+    catch (e) { return ''; }
+  }
+
+  var toastTimer = null;
+  function toast(msg, ms) {
+    var t = $('#toast');
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, ms || 2200);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { ta.setSelectionRange(0, text.length); } catch (e) {}
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    return ok;
+  }
+
+  function download(blob, name) {
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 4000);
+  }
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src; s.onload = resolve;
+      s.onerror = function () { reject(new Error('Could not load ' + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  /* ------------------------------------------------------------ theme & text size */
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('theme', t); } catch (e) {}
+    $('#themeBtn').textContent = t === 'dark' ? '☀ Light' : '☾ Dark';
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', t === 'dark' ? '#121212' : '#fbfaf7');
+  }
+  function currentFs() {
+    var v = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fs'), 10);
+    return v >= 16 && v <= 36 ? v : 20;
+  }
+  function changeFs(delta) {
+    var n = Math.max(16, Math.min(36, currentFs() + delta));
+    document.documentElement.style.setProperty('--fs', n + 'px');
+    try { localStorage.setItem('fs', String(n)); } catch (e) {}
+    autoGrow();
+  }
+
+  /* ------------------------------------------------------------ views */
+  function show(view) {
+    state.view = view;
+    ['lock', 'list', 'editor'].forEach(function (v) { $('#' + v).hidden = v !== view; });
+    $('#splash').hidden = true;
+  }
+
+  /* ------------------------------------------------------------ stores */
+  function makeDemoStore() {
+    var KEY = 'stories-demo';
+    var listener = null;
+    function read() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
+    function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
+    function emit() { if (listener) listener(read().sort(function (a, b) { return b.updatedAt - a.updatedAt; })); }
+    window.addEventListener('storage', function (e) { if (e.key === KEY) emit(); });
+    return {
+      live: false,
+      onAuth: function (cb) { cb({ demo: true }); },
+      signIn: function () { return Promise.resolve(); },
+      signOut: function () { return Promise.resolve(); },
+      listen: function (cb) { listener = cb; emit(); },
+      stop: function () { listener = null; },
+      newId: function () { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
+      save: function (s) {
+        var a = read().filter(function (x) { return x.id !== s.id; });
+        a.push({ id: s.id, title: s.title, body: s.body, createdAt: s.createdAt, updatedAt: s.updatedAt });
+        write(a); emit(); return Promise.resolve();
+      },
+      remove: function (id) { write(read().filter(function (x) { return x.id !== id; })); emit(); return Promise.resolve(); }
+    };
+  }
+
+  function makeLiveStore() {
+    var base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_VERSION + '/';
+    return Promise.all([
+      import(base + 'firebase-app.js'),
+      import(base + 'firebase-auth.js'),
+      import(base + 'firebase-firestore.js')
+    ]).then(function (m) {
+      var appMod = m[0], authMod = m[1], fs = m[2];
+      var app = appMod.initializeApp(CFG);
+      var auth = authMod.getAuth(app);
+      var db;
+      try {
+        db = fs.initializeFirestore(app, {
+          localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() })
+        });
+      } catch (e) { db = fs.getFirestore(app); }
+      var col = fs.collection(db, 'stories');
+      var unsub = null;
+      return {
+        live: true,
+        onAuth: function (cb) { authMod.onAuthStateChanged(auth, cb); },
+        signIn: function (pass) { return authMod.signInWithEmailAndPassword(auth, LOGIN_EMAIL, pass); },
+        signOut: function () { return authMod.signOut(auth); },
+        listen: function (cb) {
+          if (unsub) unsub();
+          unsub = fs.onSnapshot(
+            fs.query(col, fs.orderBy('updatedAt', 'desc')),
+            function (snap) {
+              $('#listErr').hidden = true;
+              cb(snap.docs.map(function (d) {
+                var o = d.data(); o.id = d.id; o._pending = d.metadata.hasPendingWrites; return o;
+              }));
+            },
+            function (err) {
+              var msg = err && err.code === 'permission-denied'
+                ? 'Cannot read stories. The Firebase rules or the sign-in user need checking.'
+                : 'Cannot load stories right now. Check the internet connection.';
+              var el = $('#listErr'); el.textContent = msg; el.hidden = false;
+            }
+          );
+        },
+        stop: function () { if (unsub) unsub(); unsub = null; },
+        newId: function () { return fs.doc(col).id; },
+        save: function (s) {
+          return fs.setDoc(fs.doc(col, s.id), { title: s.title, body: s.body, createdAt: s.createdAt, updatedAt: s.updatedAt });
+        },
+        remove: function (id) { return fs.deleteDoc(fs.doc(col, id)); }
+      };
+    });
+  }
+
+  /* ------------------------------------------------------------ list */
+  function visibleStories() {
+    var q = norm(state.query).trim();
+    if (!q) return state.stories;
+    var terms = q.split(/\s+/);
+    return state.stories.filter(function (s) {
+      var hay = norm((s.title || '') + ' ' + (s.body || ''));
+      return terms.every(function (t) { return hay.indexOf(t) !== -1; });
+    });
+  }
+  function snippet(s) {
+    var full = (s.body || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+    var q = norm(state.query).trim();
+    if (q) {
+      var first = q.split(/\s+/)[0];
+      var i = norm(full).indexOf(first);
+      if (i > 50) return '…' + full.slice(i - 40, i + 120);
+    }
+    return displayBody(s).normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+  function renderList() {
+    var all = state.stories.length;
+    var list = visibleStories();
+    $('#count').textContent = state.query.trim()
+      ? list.length + ' of ' + all + (all === 1 ? ' story' : ' stories')
+      : all + (all === 1 ? ' story' : ' stories');
+    $('#count').hidden = all === 0;
+    if (all === 0) {
+      $('#cards').innerHTML = '<div class="empty">No stories yet.<br>Tap “+ New story” to start writing.</div>';
+      return;
+    }
+    if (list.length === 0) {
+      $('#cards').innerHTML = '<div class="empty">Nothing found for “' + esc(state.query.trim()) + '”.</div>';
+      return;
+    }
+    $('#cards').innerHTML = list.map(function (s) {
+      var sn = snippet(s);
+      return '<div class="card" data-id="' + esc(s.id) + '">' +
+        '<button type="button" class="open"><div class="ct">' + esc(displayTitle(s)) + '</div>' +
+        (sn ? '<div class="cs">' + esc(sn) + '</div>' : '') +
+        '<div class="cd">' + esc(fmtDate(s.updatedAt)) + '</div></button>' +
+        '<button type="button" class="btn cardcopy" aria-label="Copy this story">Copy</button></div>';
+    }).join('');
+  }
+
+  /* ------------------------------------------------------------ editor + autosave */
+  var saveTimer = null, dirty = false, inflight = 0;
+
+  function updateStatus() {
+    var el = $('#status');
+    if (!state.current) { el.textContent = ''; return; }
+    if (dirty || inflight > 0) {
+      el.textContent = navigator.onLine === false ? 'Offline: will sync later' : 'Saving…';
+    } else if (state.current.isNew) {
+      el.textContent = '';
+    } else {
+      el.textContent = 'Saved ✓';
+    }
+  }
+
+  function autoGrow() {
+    var ta = $('#body');
+    if (!ta || state.view !== 'editor') return;
+    var y = window.scrollY;
+    ta.style.height = 'auto';
+    ta.style.height = (ta.scrollHeight + 4) + 'px';
+    window.scrollTo(0, y);
+  }
+
+  function onEdit() {
+    var s = state.current;
+    if (!s) return;
+    s.title = $('#title').value;
+    s.body = $('#body').value;
+    dirty = true;
+    updateStatus();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, 700);
+  }
+
+  function flush() {
+    clearTimeout(saveTimer);
+    var s = state.current;
+    if (!s || !dirty) return Promise.resolve();
+    dirty = false;
+    if (s.isNew && !s.title.trim() && !s.body.trim()) { updateStatus(); return Promise.resolve(); }
+    s.updatedAt = Date.now();
+    inflight++;
+    updateStatus();
+    var copy = { id: s.id, title: s.title, body: s.body, createdAt: s.createdAt, updatedAt: s.updatedAt };
+    return Promise.resolve(store.save(copy)).then(function () {
+      s.isNew = false;
+    }).catch(function () {
+      dirty = true;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flush, 4000);
+    }).then(function () {
+      inflight--;
+      updateStatus();
+    });
+  }
+
+  function openEditor(story) {
+    state.listScroll = window.scrollY;
+    state.current = story;
+    dirty = false; inflight = 0;
+    $('#title').value = story.title || '';
+    $('#body').value = story.body || '';
+    show('editor');
+    window.scrollTo(0, 0);
+    try { history.pushState({ editor: 1 }, ''); } catch (e) {}
+    autoGrow();
+    updateStatus();
+    if (story.isNew) $('#body').focus();
+  }
+
+  function newStory() {
+    var now = Date.now();
+    openEditor({ id: store.newId(), title: '', body: '', createdAt: now, updatedAt: now, isNew: true });
+  }
+
+  function leaveEditor() {
+    return flush().then(function () {
+      state.current = null;
+      show('list');
+      renderList();
+      window.scrollTo(0, state.listScroll || 0);
+    });
+  }
+
+  function goBack() {
+    if (history.state && history.state.editor) history.back();
+    else leaveEditor();
+  }
+
+  function applyRemote(list) {
+    var cur = state.current;
+    if (!cur || dirty || inflight > 0) return;
+    var remote = null;
+    for (var i = 0; i < list.length; i++) if (list[i].id === cur.id) { remote = list[i]; break; }
+    if (!remote) {
+      if (!cur.isNew && state.gotFirstSnapshot) {
+        toast('This story was deleted on your other phone', 3500);
+        state.current = null;
+        if (history.state && history.state.editor) history.back(); else leaveEditor();
+      }
+      return;
+    }
+    if (remote._pending) return;
+    if (remote.title === cur.title && remote.body === cur.body) return;
+    var ta = $('#body'), ti = $('#title');
+    var focusedBody = document.activeElement === ta;
+    var a = ta.selectionStart, b = ta.selectionEnd;
+    cur.title = remote.title || ''; cur.body = remote.body || '';
+    cur.updatedAt = remote.updatedAt;
+    ti.value = cur.title; ta.value = cur.body;
+    if (focusedBody) { try { ta.setSelectionRange(Math.min(a, ta.value.length), Math.min(b, ta.value.length)); } catch (e) {} }
+    autoGrow();
+    toast('Updated from your other phone', 1800);
+  }
+
+  function onStories(list) {
+    state.stories = list;
+    if (state.view === 'list') renderList();
+    if (state.view === 'editor') applyRemote(list);
+    state.gotFirstSnapshot = true;
+  }
+
+  /* ------------------------------------------------------------ sheets */
+  function openSheet(id) {
+    $('#sheetWrap').hidden = false;
+    $('#menuSheet').hidden = id !== 'menuSheet';
+    $('#confirmSheet').hidden = id !== 'confirmSheet';
+  }
+  function closeSheets() {
+    $('#sheetWrap').hidden = true;
+    $('#menuSheet').hidden = true;
+    $('#confirmSheet').hidden = true;
+  }
+  var confirmAction = null;
+  function askConfirm(text, yesLabel, noLabel, action) {
+    $('#confirmText').textContent = text;
+    $('#confirmYes').textContent = yesLabel;
+    $('#confirmNo').textContent = noLabel;
+    confirmAction = action;
+    openSheet('confirmSheet');
+  }
+
+  /* ------------------------------------------------------------ copy / export */
+  function storyText(s) {
+    return ((s.title || '').trim() ? s.title.trim() + '\n\n' : '') + (s.body || '');
+  }
+  function allAsText() {
+    return state.stories.map(function (s) {
+      return displayTitle(s) + '\n' + fmtDate(s.updatedAt) + '\n\n' + displayBody(s).trim();
+    }).join('\n\n----------------------------------------\n\n');
+  }
+
+  /* WORD-START */
+  function buildWordDoc(docx, stories, helpers) {
+    var Document = docx.Document, Paragraph = docx.Paragraph, TextRun = docx.TextRun, HeadingLevel = docx.HeadingLevel;
+    // "cs" is the font Word uses for Hindi / Marathi (Devanagari) text.
+    var FONT = { ascii: 'Calibri', hAnsi: 'Calibri', eastAsia: 'Calibri', cs: 'Nirmala UI' };
+    var children = [];
+    stories.forEach(function (s, i) {
+      children.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        pageBreakBefore: i > 0,
+        children: [new TextRun({ text: helpers.title(s), font: FONT })]
+      }));
+      children.push(new Paragraph({
+        spacing: { after: 240 },
+        children: [new TextRun({
+          text: helpers.date(s), font: FONT, italics: true, italicsComplexScript: true,
+          color: '666666', size: 20, sizeComplexScript: 20
+        })]
+      }));
+      String(helpers.body(s) || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (line) {
+        children.push(new Paragraph({
+          spacing: { after: 120, line: 340 },
+          children: [new TextRun({ text: line, font: FONT, size: 26, sizeComplexScript: 26 })]
+        }));
+      });
+    });
+    return new Document({
+      creator: 'Copy Notes',
+      title: 'Copy Notes',
+      styles: {
+        default: {
+          document: { run: { font: FONT, size: 26, sizeComplexScript: 26 } },
+          heading1: {
+            run: { font: FONT, size: 36, sizeComplexScript: 36, bold: true, boldComplexScript: true, color: '000000' },
+            paragraph: { spacing: { after: 80 } }
+          }
+        }
+      },
+      sections: [{
+        properties: { page: { margin: { top: 1134, bottom: 1134, left: 1304, right: 1304 } } },
+        children: children
+      }]
+    });
+  }
+  /* WORD-END */
+
+  function exportWord() {
+    if (!state.stories.length) { toast('No stories yet'); return; }
+    toast('Preparing the Word file…', 6000);
+    var ready = window.docx ? Promise.resolve() : loadScript('https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js');
+    ready.then(function () {
+      var doc = buildWordDoc(window.docx, state.stories, {
+        title: displayTitle, body: displayBody, date: function (s) { return fmtDate(s.updatedAt); }
+      });
+      return window.docx.Packer.toBlob(doc);
+    }).then(function (blob) {
+      var d = new Date();
+      var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      download(blob, 'Copy-Notes-' + stamp + '.docx');
+      toast('Word file downloaded', 2500);
+    }).catch(function () {
+      toast('Could not make the Word file. Needs internet the first time.', 4000);
+    });
+  }
+
+  function exportPdf() {
+    if (!state.stories.length) { toast('No stories yet'); return; }
+    $('#printArea').innerHTML = state.stories.map(function (s) {
+      return '<section class="ps"><h1>' + esc(displayTitle(s)) + '</h1><div class="pd">' + esc(fmtDate(s.updatedAt)) +
+        '</div><div class="pb">' + esc(displayBody(s)) + '</div></section>';
+    }).join('');
+    toast('In the next screen, choose “Save as PDF”', 4000);
+    setTimeout(function () { window.print(); }, 700);
+  }
+
+  /* ------------------------------------------------------------ wiring */
+  function wire() {
+    $('#themeBtn').addEventListener('click', function () {
+      applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+    $('#menuBtn').addEventListener('click', function () { openSheet('menuSheet'); });
+    $('#newBtn').addEventListener('click', newStory);
+    $('#search').addEventListener('input', function (e) { state.query = e.target.value; renderList(); });
+    $('#search').addEventListener('keydown', function (e) { if (e.key === 'Enter') e.target.blur(); });
+
+    $('#cards').addEventListener('click', function (e) {
+      var card = e.target.closest('.card');
+      if (!card) return;
+      var id = card.getAttribute('data-id');
+      var s = state.stories.filter(function (x) { return x.id === id; })[0];
+      if (!s) return;
+      if (e.target.closest('.cardcopy')) {
+        Promise.resolve(copyText(storyText(s))).then(function (ok) { toast(ok ? 'Copied' : 'Could not copy'); });
+        return;
+      }
+      openEditor({ id: s.id, title: s.title || '', body: s.body || '', createdAt: s.createdAt, updatedAt: s.updatedAt, isNew: false });
+    });
+
+    $('#backBtn').addEventListener('click', goBack);
+    $('#title').addEventListener('input', onEdit);
+    $('#title').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('#body').focus(); } });
+    $('#body').addEventListener('input', function () { autoGrow(); onEdit(); });
+    window.addEventListener('resize', autoGrow);
+    $('#fsMinus').addEventListener('click', function () { changeFs(-2); });
+    $('#fsPlus').addEventListener('click', function () { changeFs(2); });
+    $('#copyOne').addEventListener('click', function () {
+      var s = state.current; if (!s) return;
+      Promise.resolve(copyText(storyText(s))).then(function (ok) { toast(ok ? 'Copied' : 'Could not copy'); });
+    });
+    $('#delOne').addEventListener('click', function () {
+      var s = state.current; if (!s) return;
+      var msg = store.live ? 'Delete this story? It will also disappear from your other phone.' : 'Delete this story?';
+      askConfirm(msg, 'Delete', 'Keep it', function () {
+        var id = s.id, wasNew = s.isNew && !inflight;
+        clearTimeout(saveTimer); dirty = false;
+        state.current = null;
+        var done = wasNew ? Promise.resolve() : Promise.resolve(store.remove(id));
+        done.then(function () { toast('Deleted'); }).catch(function () { toast('Could not delete. Try again.'); });
+        if (history.state && history.state.editor) history.back(); else leaveEditor();
+      });
+    });
+
+    $('#backdrop').addEventListener('click', closeSheets);
+    $('#mClose').addEventListener('click', closeSheets);
+    $('#confirmNo').addEventListener('click', closeSheets);
+    $('#confirmYes').addEventListener('click', function () { var a = confirmAction; confirmAction = null; closeSheets(); if (a) a(); });
+    $('#mCopyAll').addEventListener('click', function () {
+      if (!state.stories.length) { closeSheets(); toast('No stories yet'); return; }
+      var ok = copyText(allAsText());
+      closeSheets();
+      Promise.resolve(ok).then(function (r) { toast(r ? 'All ' + state.stories.length + ' stories copied' : 'Could not copy', 2600); });
+    });
+    $('#mWord').addEventListener('click', function () { closeSheets(); exportWord(); });
+    $('#mPdf').addEventListener('click', function () { closeSheets(); exportPdf(); });
+    $('#mSmaller').addEventListener('click', function () { changeFs(-2); renderList(); });
+    $('#mBigger').addEventListener('click', function () { changeFs(2); renderList(); });
+    $('#mLock').addEventListener('click', function () { closeSheets(); store.signOut(); });
+
+    $('#showPass').addEventListener('click', function () {
+      var p = $('#pass'), hide = p.type === 'text';
+      p.type = hide ? 'password' : 'text';
+      $('#showPass').textContent = hide ? 'Show' : 'Hide';
+    });
+    $('#lockForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var btn = $('#unlockBtn'), err = $('#lockErr');
+      err.textContent = ''; btn.disabled = true; btn.textContent = 'Checking…';
+      store.signIn($('#pass').value).then(function () {
+        $('#pass').value = '';
+      }).catch(function (ex) {
+        var c = ex && ex.code || '';
+        err.textContent =
+          /invalid-credential|wrong-password|user-not-found|invalid-login/.test(c) ? 'That passcode is not right. Please try again.' :
+          c === 'auth/network-request-failed' ? 'No internet connection. Please try again.' :
+          c === 'auth/too-many-requests' ? 'Too many tries. Please wait a few minutes.' :
+          c === 'auth/operation-not-allowed' ? 'Setup is not finished: turn on Email/Password sign-in in Firebase.' :
+          'Could not unlock (' + (c || 'unknown') + ').';
+      }).then(function () { btn.disabled = false; btn.textContent = 'Unlock'; });
+    });
+
+    window.addEventListener('popstate', function () {
+      closeSheets();
+      if (state.view === 'editor') leaveEditor();
+    });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(); });
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    window.addEventListener('afterprint', function () { $('#printArea').innerHTML = ''; });
+  }
+
+  /* ------------------------------------------------------------ start */
+  function startApp() {
+    $('#lockUser').value = LOGIN_EMAIL;
+    $('#demoNote').hidden = store.live;
+    $('#mLock').hidden = !store.live;
+    store.onAuth(function (user) {
+      if (user) {
+        store.listen(onStories);
+        if (state.view !== 'editor') { show('list'); renderList(); }
+      } else {
+        store.stop();
+        state.stories = []; state.current = null; state.gotFirstSnapshot = false;
+        $('#lockErr').textContent = '';
+        show('lock');
+      }
+    });
+  }
+
+  applyTheme(document.documentElement.getAttribute('data-theme'));
+  wire();
+
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+
+  if (!CONFIGURED) {
+    store = makeDemoStore();
+    startApp();
+  } else {
+    makeLiveStore().then(function (s) { store = s; startApp(); }).catch(function () {
+      $('#splash').textContent = 'Could not start. Please check the internet connection and reload.';
+    });
+  }
+})();
+</script>
+</body>
+</html>
